@@ -148,6 +148,31 @@ public class SMBFile {
                 createDisposition, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE));
     }
 
+    /**
+     * Generic Open File or Folder
+     */
+    public static SMBFile open(
+            TreeConnect treeConnect, String path, long accessMask,
+            EnumSet<FileAttributes> fileAttributes, EnumSet<SMB2ShareAccess> shareAccess,
+            SMB2CreateDisposition createDisposition, EnumSet<SMB2CreateOptions> createOptions)
+            throws TransportException, SMBApiException {
+        logger.info("open {},{}", path);
+
+        Session session = treeConnect.getSession();
+        Connection connection = session.getConnection();
+        SMB2CreateRequest cr = openFileRequest(
+                treeConnect, path, accessMask, shareAccess, fileAttributes, createDisposition, createOptions);
+        Future<SMB2CreateResponse> responseFuture = connection.send(cr);
+        SMB2CreateResponse cresponse = Futures.get(responseFuture, TransportException.Wrapper);
+
+        if (cresponse.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
+            throw new SMBApiException(cresponse.getHeader().getStatus(), "Create failed for " + path);
+        }
+
+        return new SMBFile(
+                cresponse.getFileId(), treeConnect, path, null, shareAccess,
+                createOptions, fileAttributes, createDisposition);
+    }
 
     /**
      * File in the given path exists or not
@@ -457,29 +482,6 @@ public class SMBFile {
         }
     }
 
-    private static SMBFile open(
-            TreeConnect treeConnect, String path, long accessMask,
-            EnumSet<FileAttributes> fileAttributes, EnumSet<SMB2ShareAccess> shareAccess,
-            SMB2CreateDisposition createDisposition, EnumSet<SMB2CreateOptions> createOptions)
-            throws TransportException, SMBApiException {
-        logger.info("open {},{}", path);
-
-        Session session = treeConnect.getSession();
-        Connection connection = session.getConnection();
-        SMB2CreateRequest cr = openFileRequest(
-                treeConnect, path, accessMask, shareAccess, fileAttributes, createDisposition, createOptions);
-        Future<SMB2CreateResponse> responseFuture = connection.send(cr);
-        SMB2CreateResponse cresponse = Futures.get(responseFuture, TransportException.Wrapper);
-
-        if (cresponse.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-            throw new SMBApiException(cresponse.getHeader().getStatus(), "Create failed for " + path);
-        }
-
-        return new SMBFile(
-                cresponse.getFileId(), treeConnect, path, null, shareAccess,
-                createOptions, fileAttributes, createDisposition);
-    }
-
     private static SMB2CreateRequest openFileRequest(
             TreeConnect treeConnect, String path,
             long accessMask,
@@ -670,5 +672,9 @@ public class SMBFile {
         } catch (Buffer.BufferException e) {
             throw new TransportException(e);
         }
+    }
+
+    public EnumSet<AccessMask> getAccessMask() {
+        return accessMask;
     }
 }
