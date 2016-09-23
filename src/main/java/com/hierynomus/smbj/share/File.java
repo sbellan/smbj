@@ -78,7 +78,9 @@ public class File {
             SMB2WriteResponse wresp = Futures.get(writeFuture, TransportException.Wrapper);
 
             if (wresp.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-                throw new SMBApiException(wresp.getHeader().getStatus(), "Write failed for " + this);
+                throw new SMBApiException(wresp.getHeader().getStatus(),
+                        wresp.getHeader().getStatusCode(),
+                        "Write failed for " + this);
             }
             offset += numRead;
             if (progressListener != null) progressListener.onProgressChanged(offset, -1);
@@ -109,7 +111,9 @@ public class File {
         }
 
         if (rresp.getHeader().getStatus() != NtStatus.STATUS_END_OF_FILE) {
-            throw new SMBApiException(rresp.getHeader().getStatus(), "Read failed for " + this);
+            throw new SMBApiException(rresp.getHeader().getStatus(),
+                    rresp.getHeader().getStatusCode(),
+                    "Read failed for " + this);
         }
     }
 
@@ -126,7 +130,9 @@ public class File {
         SMB2Close closeResp = Futures.get(closeFuture, TransportException.Wrapper);
 
         if (closeResp.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-            throw new SMBApiException(closeResp.getHeader().getStatus(), "Close failed for " + fileId);
+            throw new SMBApiException(closeResp.getHeader().getStatus(),
+                    closeResp.getHeader().getStatusCode(),
+                    "Close failed for " + fileId);
         }
     }
 

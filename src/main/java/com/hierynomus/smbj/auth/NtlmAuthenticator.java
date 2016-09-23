@@ -27,6 +27,8 @@ import com.hierynomus.protocol.commons.buffer.Endian;
 import com.hierynomus.protocol.commons.concurrent.Futures;
 import com.hierynomus.smbj.connection.Connection;
 import com.hierynomus.mserref.NtStatus;
+import com.hierynomus.smbj.event.SMBEventBus;
+import com.hierynomus.smbj.session.Session;
 import com.hierynomus.smbj.smb2.messages.SMB2SessionSetup;
 import com.hierynomus.smbj.transport.TransportException;
 import com.hierynomus.spnego.NegTokenInit;
@@ -60,7 +62,7 @@ public class NtlmAuthenticator implements Authenticator {
         }
     }
 
-    public long authenticate(Connection connection, AuthenticationContext context) throws TransportException {
+    public Session authenticate(Connection connection, AuthenticationContext context, SMBEventBus bus) throws TransportException {
         try {
             logger.info("Authenticating {} on {} using NTLM", context.getUsername(), connection.getRemoteHostname());
             EnumSet<SMB2SessionSetup.SMB2SecurityMode> signingEnabled = EnumSet.of
@@ -73,6 +75,7 @@ public class NtlmAuthenticator implements Authenticator {
             Future<SMB2SessionSetup> future = connection.send(smb2SessionSetup);
             SMB2SessionSetup receive = Futures.get(future, TransportException.Wrapper);
             long sessionId = receive.getHeader().getSessionId();
+            byte[] sessionkey = null;
             if (receive.getHeader().getStatus() == NtStatus.STATUS_MORE_PROCESSING_REQUIRED) {
                 logger.debug("More processing required for authentication of {}", context.getUsername());
                 byte[] securityBuffer = receive.getSecurityBuffer();
@@ -95,7 +98,7 @@ public class NtlmAuthenticator implements Authenticator {
 
                 byte[] ntlmv2Response = NtlmFunctions.getNTLMv2Response(responseKeyNT, serverChallenge, ntlmv2ClientChallenge);
 
-                byte[] sessionkey = null;
+
 
                 if (challenge.getNegotiateFlags().contains(NtlmNegotiateFlag.NTLMSSP_NEGOTIATE_SIGN)) {
                     byte[] userSessionKey = NtlmFunctions.hmac_md5(
@@ -127,7 +130,7 @@ public class NtlmAuthenticator implements Authenticator {
                     throw new NtlmException("Setup failed with " + setupResponse.getHeader().getStatus());
                 }
             }
-            return sessionId;
+            return new Session(sessionId, connection, bus, sessionkey);
         } catch (IOException | Buffer.BufferException e) {
             throw new TransportException(e);
         }

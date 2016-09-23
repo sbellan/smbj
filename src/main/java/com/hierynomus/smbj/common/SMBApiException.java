@@ -19,15 +19,18 @@ import com.hierynomus.mserref.NtStatus;
 
 public class SMBApiException extends SMBRuntimeException {
     private NtStatus status;
+    private long statusCode;
 
-    public SMBApiException(NtStatus status, String message) {
+    public SMBApiException(NtStatus status, long statusCode, String message) {
         super(message);
         this.status = status;
+        this.statusCode = statusCode;
     }
 
-    public SMBApiException(NtStatus status, Throwable t) {
+    public SMBApiException(NtStatus status, long statusCode, Throwable t) {
         super(t);
         this.status = status;
+        this.statusCode = statusCode;
     }
 
     public NtStatus getStatus() {
@@ -36,6 +39,6 @@ public class SMBApiException extends SMBRuntimeException {
 
     @Override
     public String getMessage() {
-        return status + "(" + status.getValue() + "): " + super.getMessage();
+        return status + "(" + status.getValue() + "/" + statusCode + "): " + super.getMessage();
     }
 }

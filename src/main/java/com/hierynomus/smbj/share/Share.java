@@ -93,7 +93,9 @@ public class Share implements AutoCloseable {
         SMB2CreateResponse cresponse = Futures.get(responseFuture, TransportException.Wrapper);
 
         if (cresponse.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-            throw new SMBApiException(cresponse.getHeader().getStatus(), "Create failed for " + path);
+            throw new SMBApiException(cresponse.getHeader().getStatus(),
+                    cresponse.getHeader().getStatusCode(),
+                    "Create failed for " + path);
         }
 
         return cresponse.getFileId();
@@ -129,7 +131,9 @@ public class Share implements AutoCloseable {
         SMB2Close closeResp = Futures.get(closeFuture, TransportException.Wrapper);
 
         if (closeResp.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-            throw new SMBApiException(closeResp.getHeader().getStatus(), "Close failed for " + fileId);
+            throw new SMBApiException(closeResp.getHeader().getStatus(),
+                    closeResp.getHeader().getStatusCode(),
+                    "Close failed for " + fileId);
         }
     }
 }

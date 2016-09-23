@@ -37,6 +37,7 @@ import com.hierynomus.smbj.transport.TransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -67,30 +68,44 @@ public class Directory {
     public List<FileInfo> list() throws TransportException, SMBApiException {
         Session session = treeConnect.getSession();
         Connection connection = session.getConnection();
+        int index = 0;
+        int newDataLength = -1;
+        List<FileInfo> fileList = new ArrayList<FileInfo>();
 
-        // Query Directory Request
-        SMB2QueryDirectoryRequest qdr = new SMB2QueryDirectoryRequest(connection.getNegotiatedDialect(),
-                session.getSessionId(), treeConnect.getTreeId(),
-                getFileId(), FileInformationClass.FileIdBothDirectoryInformation, // FileInformationClass
-                // .FileDirectoryInformation,
-                EnumSet.of(SMB2QueryDirectoryRequest.SMB2QueryDirectoryFlags.SMB2_REOPEN),
-                0, null);
-        Future<SMB2QueryDirectoryResponse> qdFuture = connection.send(qdr);
+        // Keep querying until we don't get new data
+        do {
+            // Query Directory Request
+            SMB2QueryDirectoryRequest qdr = new SMB2QueryDirectoryRequest(connection.getNegotiatedDialect(),
+                    session.getSessionId(), treeConnect.getTreeId(),
+                    getFileId(), FileInformationClass.FileIdBothDirectoryInformation, // FileInformationClass
+                    // .FileDirectoryInformation,
+                    EnumSet.of(SMB2QueryDirectoryRequest.SMB2QueryDirectoryFlags.SMB2_INDEX_SPECIFIED),
+                    index, null);
+            Future<SMB2QueryDirectoryResponse> qdFuture = connection.send(qdr);
 
-        SMB2QueryDirectoryResponse qdResp = Futures.get(qdFuture, TransportException.Wrapper);
+            SMB2QueryDirectoryResponse qdResp = Futures.get(qdFuture, TransportException.Wrapper);
 
-        if (qdResp.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-            throw new SMBApiException(qdResp.getHeader().getStatus(),
-                    "Query directory failed for " + fileName + "/" + fileId);
-        }
-        byte[] outputBuffer = qdResp.getOutputBuffer();
+            if (qdResp.getHeader().getStatus() == NtStatus.STATUS_NO_MORE_FILES) {
+                newDataLength = 0;
+            } else {
+                if (qdResp.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
+                    throw new SMBApiException(qdResp.getHeader().getStatus(),
+                            qdResp.getHeader().getStatusCode(),
+                            "Query directory failed for " + fileName + "/" + fileId);
+                }
+                byte[] outputBuffer = qdResp.getOutputBuffer();
+                newDataLength = outputBuffer.length;
+                index += newDataLength;
 
-        try {
-            return FileInformationFactory.parseFileInformationList(
-                    outputBuffer, FileInformationClass.FileIdBothDirectoryInformation);
-        } catch (Buffer.BufferException e) {
-            throw new TransportException(e);
-        }
+                try {
+                    fileList.addAll(FileInformationFactory.parseFileInformationList(outputBuffer, FileInformationClass.FileIdBothDirectoryInformation));
+                } catch (Buffer.BufferException e) {
+                    throw new TransportException(e);
+                }
+            }
+        } while(newDataLength > 65000); // Optimization for not making the last call which returns NO_MORE_FILES.
+
+        return fileList;
     }
 
     public SMB2FileId getFileId() {
@@ -106,7 +121,9 @@ public class Directory {
         SMB2Close closeResp = Futures.get(closeFuture, TransportException.Wrapper);
 
         if (closeResp.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-            throw new SMBApiException(closeResp.getHeader().getStatus(), "Close failed for " + fileId);
+            throw new SMBApiException(closeResp.getHeader().getStatus(),
+                    closeResp.getHeader().getStatusCode(),
+                    "Close failed for " + fileId);
         }
     }
 

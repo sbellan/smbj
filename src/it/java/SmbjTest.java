@@ -50,6 +50,7 @@ import java.util.UUID;
 import java.util.concurrent.Future;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -74,13 +75,14 @@ public class SmbjTest {
     }
 
     static ConnectInfo ci;
-    String TEST_PATH = get("junit");
+    String TEST_PATH = get("QA", "sarva");
 
     @BeforeClass
     public static void setup() throws IOException {
         String url = System.getenv("TEST_SMBJ_API_URL");
         if (url == null) {
-            url = "smb://<someip>/share?smbuser=<smbuser>&smbdomain=CORP&smbpassword=<smbpass>";
+            url = "smb://10.1.2.21/sharedfolder?smbuser=Administrator&smbdomain=CORP&smbpassword=V3r@d0cs!!";
+            //url = "smb://10.1.2.18/Share?smbuser=Administrator&smbdomain=CORP&smbpassword=V3r@d0cs!!";
         }
         ci = getConnectInfo(url);
         System.out.printf("%s-%s-%s-%s-%s\n", ci.host, ci.domain, ci.user, ci.password, ci.sharePath);
@@ -106,8 +108,8 @@ public class SmbjTest {
                 }
             }
 
-            List<FileInfo> list = share.list(null);
-            System.out.println(list);
+            List<FileInfo> list = share.list(fix("QA/sohail_northstar/Drive"));
+            System.out.println("Size of list=" + list.size());
 
             // Create it again
             share.mkdir(fix(TEST_PATH));
@@ -214,6 +216,15 @@ public class SmbjTest {
     }
 
     @Test
+    public void testSID() {
+        SID s1 = new SID((byte) 1, new byte[]{0, 0, 0, 0, 0, 1}, new long[]{0});
+        SID s2 = new SID((byte) 1, new byte[]{0, 0, 0, 0, 0, 1}, new long[]{0});
+        assertEquals(s1, s2);
+        System.out.println(s1.hashCode());
+        System.out.println(s2.hashCode());
+    }
+
+    @Test
     public void testRpc() throws IOException, SMBApiException, URISyntaxException {
         logger.info("Connect {},{},{},{}", ci.host, ci.user, ci.domain, ci.sharePath);
         SMBClient client = new SMBClient();
@@ -317,7 +328,9 @@ public class SmbjTest {
         SMB2ChangeNotifyResponse cnresponse = Futures.get(changeNotifyResponseFuture, TransportException.Wrapper);
 
         if (cnresponse.getHeader().getStatus() != NtStatus.STATUS_SUCCESS) {
-            throw new SMBApiException(cnresponse.getHeader().getStatus(), "Notify failed for " + directory);
+            throw new SMBApiException(cnresponse.getHeader().getStatus(),
+                    cnresponse.getHeader().getStatusCode(),
+                    "Notify failed for " + directory);
         }
 
         return cnresponse.getFileNotifyInfoList();

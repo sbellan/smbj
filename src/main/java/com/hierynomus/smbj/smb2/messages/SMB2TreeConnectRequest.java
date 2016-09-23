@@ -15,6 +15,7 @@
  */
 package com.hierynomus.smbj.smb2.messages;
 
+import com.hierynomus.protocol.commons.buffer.Buffer;
 import com.hierynomus.smbj.common.SMBBuffer;
 import com.hierynomus.smbj.common.SmbPath;
 import com.hierynomus.smbj.smb2.SMB2Dialect;
@@ -54,4 +55,9 @@ public class SMB2TreeConnectRequest extends SMB2Packet {
             buffer.putReserved2();
         }
     }
+
+    protected void readMessage(SMBBuffer buffer) throws Buffer.BufferException {
+
+    }
+
 }

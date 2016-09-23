@@ -15,11 +15,15 @@
  */
 package com.hierynomus.smbj.connection;
 
+import com.hierynomus.protocol.commons.Base64;
+import com.hierynomus.protocol.commons.ByteArrayUtils;
 import com.hierynomus.protocol.commons.concurrent.Futures;
 import com.hierynomus.protocol.commons.socket.SocketClient;
 import com.hierynomus.smbj.Config;
 import com.hierynomus.smbj.auth.AuthenticationContext;
 import com.hierynomus.smbj.auth.NtlmAuthenticator;
+import com.hierynomus.smbj.common.SMBBuffer;
+import com.hierynomus.smbj.common.SMBException;
 import com.hierynomus.smbj.common.SMBRuntimeException;
 import com.hierynomus.smbj.event.SMBEvent;
 import com.hierynomus.smbj.event.SMBEventBus;
@@ -44,7 +48,11 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,6 +68,7 @@ public class Connection extends SocketClient implements AutoCloseable, PacketHan
     private ConnectionInfo connectionInfo;
 
     private Config config;
+    private ConcurrentHashMap<Long, Session> sessionTable = new ConcurrentHashMap<>();
     private TransportLayer transport;
     private final SMBEventBus bus;
     private PacketReader packetReader;
@@ -114,6 +123,28 @@ public class Connection extends SocketClient implements AutoCloseable, PacketHan
         packet.getHeader().setMessageId(messageId);
         Request request = new Request(messageId, UUID.randomUUID(), packet);
         outstandingRequests.put(messageId, request);
+        if (connectionInfo.isRequireSigning() && packet.getHeader().getSessionId() > 0) {
+            Session session = sessionTable.get(packet.getHeader().getSessionId());
+            if (session != null) {
+                packet.getHeader().setFlag(SMB2MessageFlag.SMB2_FLAGS_SIGNED);
+                SMBBuffer buffer = new SMBBuffer();
+                packet.write(buffer);
+                Mac sha256_HMAC = null;
+                try {
+                    sha256_HMAC = Mac.getInstance("HMACSHA256");
+
+                    System.out.println("Session Key" + ByteArrayUtils.printHex(session.getSessionKey()));
+                    SecretKeySpec secret_key = new SecretKeySpec(session.getSessionKey(), "HMACSHA256");
+                    sha256_HMAC.init(secret_key);
+                    byte[] dataToSign = buffer.getCompactData();
+                    byte[] signature = sha256_HMAC.doFinal(dataToSign);
+                    System.out.println(packet.getClass() + ByteArrayUtils.printHex(signature));
+                    packet.getHeader().setSignature(signature);
+                } catch (Exception e) {
+                    throw new TransportException(e);
+                }
+            }
+        }
         transport.write(packet);
         return request.getFuture(null); // TODO cancel callback
     }
@@ -130,8 +161,9 @@ public class Connection extends SocketClient implements AutoCloseable, PacketHan
             NegTokenInit negTokenInit = new NegTokenInit().read(connectionInfo.getGssNegotiateToken());
             if (negTokenInit.getSupportedMechTypes().contains(new ASN1ObjectIdentifier(factory.getName()))) {
                 NtlmAuthenticator ntlmAuthenticator = factory.create();
-                long sessionId = ntlmAuthenticator.authenticate(this, authContext);
-                return new Session(sessionId, this, bus);
+                Session session = ntlmAuthenticator.authenticate(this, authContext, bus);
+                sessionTable.put(session.getSessionId(), session);
+                return session;
             }
         } catch (IOException e) {
             throw new SMBRuntimeException(e);
@@ -189,7 +221,7 @@ public class Connection extends SocketClient implements AutoCloseable, PacketHan
 
     @Handler
     private void sessionLogoff(SessionLoggedOff loggedOff) {
-        // TODO keep track of the current sessions.
         logger.info("Session logged off");
+        sessionTable.remove(loggedOff.getSessionId());
     }
 }
