@@ -75,7 +75,7 @@ public class SmbjTest {
     }
 
     static ConnectInfo ci;
-    String TEST_PATH = get("QA", "sarva");
+    String TEST_PATH = get("junit");
 
     @BeforeClass
     public static void setup() throws IOException {
@@ -108,7 +108,7 @@ public class SmbjTest {
                 }
             }
 
-            List<FileInfo> list = share.list(fix("QA/sohail_northstar/Drive"));
+            List<FileInfo> list = share.list("");
             System.out.println("Size of list=" + list.size());
 
             // Create it again

@@ -27,16 +27,17 @@ import static com.hierynomus.ntlm.messages.NtlmNegotiateFlag.*;
  */
 public class NtlmNegotiate extends NtlmPacket {
      public static final long DEFAULT_FLAGS = EnumUtils.toLong(EnumSet.of(
-            NTLMSSP_NEGOTIATE_56,
+             NTLMSSP_NEGOTIATE_56,
             NTLMSSP_NEGOTIATE_128,
-            NTLMSSP_NEGOTIATE_TARGET_INFO,
             NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY,
-            NTLMSSP_NEGOTIATE_SIGN,
+            // NTLMSSP_NEGOTIATE_SIGN, // Specifying this flag causing signature validation errors.
             NTLMSSP_NEGOTIATE_ALWAYS_SIGN,
             NTLMSSP_NEGOTIATE_KEY_EXCH,
             NTLMSSP_NEGOTIATE_NTLM,
-            NTLMSSP_NEGOTIATE_NTLM,
             NTLMSSP_REQUEST_TARGET,
+             NTLMSSP_NEGOTIATE_TARGET_INFO,
+             NTLMSSP_TARGET_TYPE_DOMAIN,
+
             NTLMSSP_NEGOTIATE_UNICODE));
 
     private long flags = DEFAULT_FLAGS;

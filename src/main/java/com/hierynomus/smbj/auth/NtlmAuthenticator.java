@@ -15,6 +15,7 @@
  */
 package com.hierynomus.smbj.auth;
 
+import com.hierynomus.mserref.NtStatus;
 import com.hierynomus.ntlm.NtlmException;
 import com.hierynomus.ntlm.functions.NtlmFunctions;
 import com.hierynomus.ntlm.messages.NtlmAuthenticate;
@@ -26,7 +27,6 @@ import com.hierynomus.protocol.commons.buffer.Buffer;
 import com.hierynomus.protocol.commons.buffer.Endian;
 import com.hierynomus.protocol.commons.concurrent.Futures;
 import com.hierynomus.smbj.connection.Connection;
-import com.hierynomus.mserref.NtStatus;
 import com.hierynomus.smbj.event.SMBEventBus;
 import com.hierynomus.smbj.session.Session;
 import com.hierynomus.smbj.smb2.messages.SMB2SessionSetup;
@@ -40,7 +40,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.nio.ByteBuffer;
 import java.util.EnumSet;
 import java.util.concurrent.Future;
 
@@ -86,6 +85,8 @@ public class NtlmAuthenticator implements Authenticator {
                 NtlmChallenge challenge = (NtlmChallenge) new NtlmChallenge().read(new Buffer.PlainBuffer(negTokenTarg.getResponseToken(), Endian.LE));
                 logger.debug("Received NTLM challenge from: {}", challenge.getTargetName());
 
+                // [MS-NTLM] 3.3.2 NTLM v2 Authentication
+
                 byte[] serverChallenge = challenge.getServerChallenge();
 
                 byte[] responseKeyNT = NtlmFunctions.NTOWFv2(
@@ -93,34 +94,35 @@ public class NtlmAuthenticator implements Authenticator {
                         context.getUsername(),
                         context.getDomain());
 
-                byte[] ntlmv2ClientChallenge =
-                        NtlmFunctions.getNTLMv2ClientChallenge(challenge.getTargetInfo());
+                byte[] clientChallenge = new byte[8];
+                NtlmFunctions.getRandom().nextBytes(clientChallenge);
 
-                byte[] ntlmv2Response = NtlmFunctions.getNTLMv2Response(responseKeyNT, serverChallenge, ntlmv2ClientChallenge);
+                byte[] challengeFromClient = NtlmFunctions.getTemp(clientChallenge, challenge.getTargetInfo());
 
+                byte[] ntProofStr = NtlmFunctions.getNTProofStr(responseKeyNT, serverChallenge, challengeFromClient);
 
+                byte[] ntChallengeResponse = NtlmFunctions.getNTChallengeResponse(ntProofStr, challengeFromClient);
 
-                if (challenge.getNegotiateFlags().contains(NtlmNegotiateFlag.NTLMSSP_NEGOTIATE_SIGN)) {
-                    byte[] userSessionKey = NtlmFunctions.hmac_md5(
-                            responseKeyNT, ByteBuffer.wrap(ntlmv2Response, 0, 16).array());
+                byte[] sessionBaseKey = NtlmFunctions.hmac_md5(responseKeyNT, ntProofStr);
 
-                    if ((challenge.getNegotiateFlags().contains(NtlmNegotiateFlag.NTLMSSP_NEGOTIATE_KEY_EXCH))) {
-                        byte[] masterKey = new byte[16];
-                        NtlmFunctions.getRandom().nextBytes(masterKey);
+                sessionkey = sessionBaseKey;
 
-                        byte[] exchangedKey = new byte[0];
-                        exchangedKey = NtlmFunctions.encryptRc4(userSessionKey, masterKey);
-                        sessionkey = exchangedKey;
-                    } else {
-                        sessionkey = userSessionKey;
-                    }
+                /*
+                if ((challenge.getNegotiateFlags().contains(NtlmNegotiateFlag.NTLMSSP_NEGOTIATE_KEY_EXCH))) {
+                    byte[] exportedSessionKey = new byte[16];
+                    NtlmFunctions.getRandom().nextBytes(exportedSessionKey);
+
+                    sessionkey = NtlmFunctions.encryptRc4(userSessionKey, exportedSessionKey);
+                } else {
+                    sessionkey = userSessionKey;
                 }
+                */
 
                 SMB2SessionSetup smb2SessionSetup2 = new SMB2SessionSetup(connection.getNegotiatedDialect(), signingEnabled);
                 smb2SessionSetup2.getHeader().setSessionId(sessionId);
                 //smb2SessionSetup2.getHeader().setCreditRequest(256);
 
-                NtlmAuthenticate resp = new NtlmAuthenticate(new byte[0], ntlmv2Response,
+                NtlmAuthenticate resp = new NtlmAuthenticate(new byte[0], ntChallengeResponse,
                         context.getUsername(), context.getDomain(), null, sessionkey, NtlmNegotiate.DEFAULT_FLAGS);
                 asn1 = negTokenTarg(resp, negTokenTarg.getResponseToken());
                 smb2SessionSetup2.setSecurityBuffer(asn1);

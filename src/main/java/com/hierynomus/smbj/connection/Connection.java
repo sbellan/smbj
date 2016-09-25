@@ -133,12 +133,10 @@ public class Connection extends SocketClient implements AutoCloseable, PacketHan
                 try {
                     sha256_HMAC = Mac.getInstance("HMACSHA256");
 
-                    System.out.println("Session Key" + ByteArrayUtils.printHex(session.getSessionKey()));
                     SecretKeySpec secret_key = new SecretKeySpec(session.getSessionKey(), "HMACSHA256");
                     sha256_HMAC.init(secret_key);
                     byte[] dataToSign = buffer.getCompactData();
                     byte[] signature = sha256_HMAC.doFinal(dataToSign);
-                    System.out.println(packet.getClass() + ByteArrayUtils.printHex(signature));
                     packet.getHeader().setSignature(signature);
                 } catch (Exception e) {
                     throw new TransportException(e);

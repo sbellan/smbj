@@ -47,10 +47,10 @@ public class NtlmFunctions {
      * </code>
      */
     public static byte[] NTOWFv2(String password, String username, String userDomain) {
-        byte[] keyBytes = NTOWFv1(password, username, userDomain);
+        byte[] ntlmHash = NTOWFv1(password, username, userDomain);
         byte[] usernameBytes = unicode(username.toUpperCase());
         byte[] userDomainBytes = unicode(userDomain);
-        return hmac_md5(keyBytes, usernameBytes, userDomainBytes);
+        return hmac_md5(ntlmHash, usernameBytes, userDomainBytes);
     }
 
     /**
@@ -156,54 +156,34 @@ public class NtlmFunctions {
     }
 
     /**
-     * [MS-NLMP].pdf 2.2.2.7 NTLM v2: NTLMv2_CLIENT_CHALLENGE
-     *
      * 3.3.2 NTLM v2 Authentication
-     * Set temp to ConcatenationOf(Responserversion, HiResponserversion, Z(6), Time, ClientChallenge, Z(4), ServerName, Z(4))
      *
-     * @param targetInformation
+     * Set NTProofStr to HMAC_MD5(ResponseKeyNT, ConcatenationOf(CHALLENGE_MESSAGE.ServerChallenge,temp))
+     *
+     * @param responseKeyNT
+     * @param serverChallenge
+     * @param challengeFromClient (temp from above)
      * @return
      */
-    public static byte[] getNTLMv2ClientChallenge(byte[] targetInformation) {
-
-        byte[] challengeFromClient = new byte[8];
-        getRandom().nextBytes(challengeFromClient);
-
-        long nowAsFileTime = MsDataTypes.nowAsFileTime();
-        byte[] l_targetInfo = (targetInformation == null) ? new byte[0] : targetInformation;
-        Buffer.PlainBuffer ccBuf = new Buffer.PlainBuffer(Endian.LE);
-        ccBuf.putByte((byte)0x01); // RespType (1)
-        ccBuf.putByte((byte)0x01); // HiRespType (1)
-        ccBuf.putUInt16(0); // Reserved1 (2)
-        ccBuf.putUInt32(0); // Reserved2 (4)
-        ccBuf.putLong(nowAsFileTime); // Timestamp (8)
-        ccBuf.putRawBytes(challengeFromClient); // ChallengeFromClient (8)
-        ccBuf.putUInt32(0); // Reserver3 (4)
-        ccBuf.putRawBytes(l_targetInfo);
-        ccBuf.putUInt32(0); // Last AV Pair indicator
-
-        return ccBuf.getCompactData();
+    public static byte[] getNTProofStr(byte[] responseKeyNT, byte[] serverChallenge, byte[] challengeFromClient) {
+        return NtlmFunctions.hmac_md5(responseKeyNT, serverChallenge, challengeFromClient);
     }
 
     /**
      *
      * 3.3.2 NTLM v2 Authentication
      *
-     * Set NTProofStr to HMAC_MD5(ResponseKeyNT, ConcatenationOf(CHALLENGE_MESSAGE.ServerChallenge,temp))
      * Set NtChallengeResponse to ConcatenationOf(NTProofStr, temp)
      *
-     * @param responseKeyNT
-     * @param serverChallenge
-     * @param ntlmv2ClientChallenge (temp from above)
+     * @param ntProofStr
+     * @param challengeFromClient (temp from above)
      * @return
      */
-    public static byte[] getNTLMv2Response(byte[] responseKeyNT, byte[] serverChallenge, byte[] ntlmv2ClientChallenge) {
+    public static byte[] getNTChallengeResponse(byte[] ntProofStr, byte[] challengeFromClient) {
 
-        byte[] ntProofStr = hmac_md5(responseKeyNT, serverChallenge, ntlmv2ClientChallenge);
-
-        byte[] ntChallengeResponse = new byte[ntProofStr.length + ntlmv2ClientChallenge.length];
+        byte[] ntChallengeResponse = new byte[ntProofStr.length + challengeFromClient.length];
         System.arraycopy(ntProofStr, 0, ntChallengeResponse, 0, ntProofStr.length);
-        System.arraycopy(ntlmv2ClientChallenge, 0, ntChallengeResponse, ntProofStr.length, ntlmv2ClientChallenge.length);
+        System.arraycopy(challengeFromClient, 0, ntChallengeResponse, ntProofStr.length, challengeFromClient.length);
 
         return ntChallengeResponse;
     }
@@ -276,4 +256,25 @@ public class NtlmFunctions {
 
     }
 
+    /**
+     * [MS-NLMP] 3.3.2 NTLM v2 Authentication
+     * Set temp to ConcatenationOf(Responserversion, HiResponserversion, Z(6), Time, ClientChallenge, Z(4), ServerName, Z(4))
+     * @param clientChallenge
+     * @param targetInfo
+     * @return
+     */
+    public static byte[] getTemp(byte[] clientChallenge, byte[] targetInfo) {
+        long nowAsFileTime = MsDataTypes.nowAsFileTime();
+        Buffer.PlainBuffer ccBuf = new Buffer.PlainBuffer(Endian.LE);
+        ccBuf.putByte((byte)0x01); // Respversion
+        ccBuf.putByte((byte)0x01); // HiRespversion (1)
+        ccBuf.putRawBytes(new byte[]{0,0,0,0,0,0});
+        ccBuf.putLong(nowAsFileTime); // Timestamp (8)
+        ccBuf.putRawBytes(clientChallenge);
+        ccBuf.putRawBytes(new byte[]{0,0,0,0});
+        ccBuf.putRawBytes(targetInfo);
+        ccBuf.putRawBytes(new byte[]{0,0,0,0});
+
+        return ccBuf.getCompactData();
+    }
 }
